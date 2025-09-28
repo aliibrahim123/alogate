@@ -1,0 +1,18 @@
+back/target/
+back/gen/
+
+ui/node_modules/
+ui/dist/
+ui/dist-ssr/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
