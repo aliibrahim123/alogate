@@ -1,0 +1,4 @@
+struct Package {
+	name: str,
+	disc: str
+}
