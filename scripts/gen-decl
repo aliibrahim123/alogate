@@ -1,2 +1,2 @@
 #! /bin/bash
-structom-codegen --input back/src/loader/decl-src/ --output back/src/loader/decl --lang rust
+structom-codegen --input decl --output back/src/decl --lang rust

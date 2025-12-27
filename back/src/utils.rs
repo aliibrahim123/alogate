@@ -1,1 +1,1 @@
-pub mod cell_map;
+pub mod cell_collection;

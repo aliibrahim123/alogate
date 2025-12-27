@@ -1,105 +1,97 @@
+use std::{
+	collections::VecDeque,
+	sync::{Arc, RwLock, RwLockReadGuard},
+	thread, u64,
+};
+
 mod gates;
+mod simulation;
 mod simulators;
 
-use std::{cell::RefCell, collections::HashMap, sync::RwLock, time::Instant};
+pub(self) use {
+	sim_info::Info, simulation::Circuit, simulation::CircuitSchema, simulation::Comp,
+	simulation::Simulation,
+};
 
-use crate::simulate::simulators::COMPONENTS_SIMULATERS;
-
-#[derive(Debug)]
-pub struct LogicComp {
-	pub type_id: u16,
-	pub data: u64,
-	pub inputs: Vec<usize>,
-	pub outputs: Vec<usize>,
-}
-#[derive(Debug)]
-pub struct LogicCircuitSchema {
-	pub comps: Vec<LogicComp>,
-	pub wire_count: u16,
-	pub reg_count: u16,
-	pub comp_data: Vec<u64>,
-}
-#[derive(Debug)]
-pub struct LogicCircuit {
-	pub id: u32,
-	pub schema_id: u32,
-	pub wires: Box<[u64]>,
-	pub regs: Box<[u64]>,
-}
-
-#[derive(Debug, Default, PartialEq)]
-pub enum SimRequest {
+#[derive(Debug, PartialEq, Default, Clone, Copy)]
+pub enum SimCommand {
 	#[default]
 	None,
+	Run {
+		target_clock: u64,
+	},
 	Pause,
-	Stop,
+	End,
+	Kill,
 }
 
-#[derive(Debug, Default)]
-pub struct SimContext<'s> {
-	pub clock: u64,
-	pub schemas: Vec<&'s LogicCircuitSchema>,
-	pub circuit_instances: Vec<LogicCircuit>,
-}
+mod sim_info {
+	use super::*;
 
-impl SimContext<'_> {
-	pub fn new() -> SimContext<'static> {
-		SimContext { ..Default::default() }
+	#[derive(Debug, Default, PartialEq, Clone, Copy)]
+	pub enum Status {
+		#[default]
+		Stopped,
+		Running,
+		Paused,
 	}
-	async fn simulate(&mut self, target_clock: u64, stop_listener: &fn() -> bool) {
-		let mut batch_size = 1u64;
-		loop {
-			let start_time = Instant::now();
-			let reached_end = self.simulate_batch(batch_size, target_clock);
-			if reached_end || stop_listener() {
-				break;
-			}
-			batch_size *= match start_time.elapsed().as_millis() {
-				10.. => break,
-				5..10 => 2,
-				2..5 => 4,
-				1..2 => 8,
-				_ => 16,
-			};
+	#[derive(Debug, Default)]
+	pub struct General {
+		pub clock: u64,
+		pub status: Status,
+	}
+	#[derive(Debug, Default)]
+	pub struct Config {
+		pub ticks_per_btick: u64,
+	}
+	#[derive(Debug, Default)]
+	pub struct Info {
+		pub general: RwLock<General>,
+		pub command: RwLock<SimCommand>,
+		pub config: RwLock<Config>,
+	}
+	impl Info {
+		pub fn general(&self) -> RwLockReadGuard<'_, General> {
+			self.general.read().unwrap()
 		}
-
-		loop {
-			let reached_end = self.simulate_batch(batch_size, target_clock);
-			if reached_end || stop_listener() {
-				break;
-			}
+		pub fn command(&self) -> RwLockReadGuard<'_, SimCommand> {
+			self.command.read().unwrap()
 		}
-	}
-	fn simulate_batch(&mut self, batch_size: u64, target_clock: u64) -> bool {
-		for _ in 0..batch_size {
-			simulate(self, 0);
-			self.clock += 1;
-
-			if self.clock >= target_clock {
-				return true;
-			}
+		pub fn config(&self) -> RwLockReadGuard<'_, Config> {
+			self.config.read().unwrap()
 		}
-		false
-	}
-	pub fn step(&mut self, clock_steps: u64, stop_listener: &fn() -> bool) {
-		self.simulate(self.clock + clock_steps, stop_listener);
-	}
-	pub fn start(&mut self, target_clock: Option<u64>, stop_listener: &fn() -> bool) {
-		self.simulate(target_clock.unwrap_or(0), stop_listener);
-	}
-
-	pub(self) fn get_circuit(&self, circuit_id: usize) -> &mut LogicCircuit {
-		todo!();
-		//unsafe { &mut *(&mut *(&self.circuit_instances as *const _))[circuit_id] }
 	}
 }
 
-fn simulate(ctx: &SimContext, circuit_id: usize) {
-	todo!();
-	/*let circuit = &mut ctx.circuit_instances[circuit_id];
-	let schema = ctx.schemas[circuit.schema_id as usize];
+#[derive(Debug, Default, Clone)]
+pub struct Simulator {
+	info: Arc<Info>,
+}
 
-	for comp in &schema.comps {
-		COMPONENTS_SIMULATERS[comp.type_id as usize](ctx, circuit, comp);
-	}*/
+impl Simulator {
+	pub fn new() -> Simulator {
+		let sim = Simulator::default();
+		let info = sim.info.clone();
+		thread::spawn(move || {
+			let mut ctx = Simulation::new(info);
+			ctx.thrive();
+		});
+		sim
+	}
+
+	pub fn command(&self, command: SimCommand) {
+		*self.info.command.write().unwrap() = command;
+	}
+	pub fn run_endless(&self) {
+		self.command(SimCommand::Run { target_clock: u64::MAX });
+	}
+	pub fn run_for(&self, target_clock: u64) {
+		self.command(SimCommand::Run { target_clock });
+	}
+	pub fn pause(&self) {
+		self.command(SimCommand::Pause);
+	}
+	pub fn end(&self) {
+		self.command(SimCommand::End);
+	}
 }
